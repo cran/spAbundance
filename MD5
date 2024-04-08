@@ -1,6 +1,6 @@
-616eeff438b1d0cd85f938e7c074c6ae *DESCRIPTION
+d3472a1685b07ba7490e8849c4f37b12 *DESCRIPTION
 b5b33c2af267b36e391590f035d75937 *NAMESPACE
-aa97cd19cc749a49a88307d60863d3f7 *NEWS.md
+dee99caa73ce5b89ae7b0060a2a1b03c *NEWS.md
 60ce0fd0b72a9d429e322126812fc245 *R/DS.R
 fdb8de2373783c459eec74d54c9b76c2 *R/NMix.R
 9a68f1b1e3fec06a8a8864b5d682352e *R/abund.R
@@ -8,7 +8,7 @@ a81ad315455af50f43d502416261fad7 *R/abundGaussian.R
 49a4402a458d1619620ba7dac557c610 *R/generics.R
 ff76fdb42bcafc74e71f5959b2b2956a *R/idist.R
 5cee272332523e714a2f3dea3e50946e *R/lfMsAbund.R
-96fc42fd1df253a14157732794101bba *R/lfMsAbundGaussian.R
+633422833db21076f41e9c56757f91b9 *R/lfMsAbundGaussian.R
 f5fe208c447577e6a4c8b1445d5aeafc *R/lfMsDS.R
 3394a998652ed145d9ef3966e73293c8 *R/lfMsNMix.R
 d1612553d15fd128ec98d0d2be7a4840 *R/mkMatUtil.R
@@ -37,7 +37,7 @@ e001032908f9ed7fe070c77bb1ff83d5 *R/spDS.R
 8ca95f7321a4fd9dd8433974ff75e36f *R/spNMix.R
 14ca93710bec976ad9ead1994178cd54 *R/svcAbund.R
 441debb8e3c55350020e69a64cf55769 *R/svcMsAbund.R
-3c8fabb2f0c84e9ea452d3d4940cea80 *R/waicAbund.R
+5147ec2dcd84dbbe27f4b7effe1c2c36 *R/waicAbund.R
 d76bebd9b3356a30bbae5088bf470917 *README.md
 20c8d3f97d93e2e318a22508275b5a02 *build/partial.rdb
 58644bdf000d3cc710236e6474459a66 *data/bbsData.rda
@@ -138,9 +138,9 @@ dec8ca9e291d8e9024649ef40811446a *src/abundGaussian.cpp
 ac8fa9570daa8866f831f1a42794551f *src/checkAlphaDS.cpp
 7f87d5e1965a11e05c1a05902e97f611 *src/checkMSAlphaDS.cpp
 bbece153faa3eb8ad96be6a6a4971c5c *src/idist.cpp
-a8638c75e62a31a18751e3246fd40996 *src/init.cpp
+c89785f1ce5e1dd0458852f7c5fd8225 *src/init.cpp
 a85be16e1a321568e108509b5f373a94 *src/lfMsAbund.cpp
-b4cfbc82d7ed22f94997effa8fdab8a6 *src/lfMsAbundGaussian.cpp
+066b95465994cb3feaab5e159158259b *src/lfMsAbundGaussian.cpp
 a24fb8d2c0435d855c0cacaa91fc3999 *src/lfMsDS.cpp
 84d7467048fbcf26de02d2eed72c75aa *src/lfMsNMix.cpp
 56b2c2bbf1d168c4b8e854bcf3fadf99 *src/mkSpCov.cpp
@@ -161,7 +161,7 @@ f23d1b2ddfc6ddd7fb8d868294db02d2 *src/sfMsDSNNGP.cpp
 ba2152c9ac4f72ae040d4c0b86785c76 *src/spAbundGaussianNNGP.cpp
 0f331e640e97156d004c182cf6e6b3aa *src/spAbundNNGP.cpp
 d5488d11d4481c08240f805bf159d22f *src/spAbundNNGPPredict.cpp
-7f590b60ae54d3fe675f9b7531662115 *src/spAbundance.h
+f9f92f9c161c2f083a4bd2b5c72a501b *src/spAbundance.h
 354717f9e59fa87abca93e838b74fb31 *src/spDSNNGP.cpp
 8c8e8fcc7e83daad28df48ebeac00d9e *src/spNMixNNGP.cpp
 8a389544bc7759a5dd31dbdf91f13ca9 *src/spNMixNNGPPredict.cpp

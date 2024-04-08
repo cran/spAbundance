@@ -69,6 +69,7 @@ extern "C" {
     int nRE = INTEGER(consts_r)[4];
     int q = INTEGER(consts_r)[5];
     int saveFitted = INTEGER(consts_r)[6];
+    int indBetas = INTEGER(consts_r)[7];
     int pp = p * p; 
     double *muBetaComm = REAL(muBetaComm_r); 
     double *SigmaBetaCommInv = (double *) R_alloc(pp, sizeof(double));   
@@ -327,53 +328,57 @@ extern "C" {
         /********************************************************************
          Update Community level Coefficients
          *******************************************************************/
-        /********************************
-         Compute b.beta.comm
-         *******************************/
-        zeros(tmp_p, p); 
-        for (i = 0; i < N; i++) {
-          F77_NAME(dgemv)(ytran, &p, &p, &one, TauBetaInv, &p, &beta[i], &N, &one, tmp_p, &inc FCONE); 
-        } // i
-        for (h = 0; h < p; h++) {
-          tmp_p[h] += SigmaBetaCommInvMuBeta[h];  
-        } // j
+        if (indBetas == 0) {
+          /********************************
+           Compute b.beta.comm
+           *******************************/
+          zeros(tmp_p, p); 
+          for (i = 0; i < N; i++) {
+            F77_NAME(dgemv)(ytran, &p, &p, &one, TauBetaInv, &p, &beta[i], &N, &one, tmp_p, &inc FCONE); 
+          } // i
+          for (h = 0; h < p; h++) {
+            tmp_p[h] += SigmaBetaCommInvMuBeta[h];  
+          } // j
 
-        /********************************
-         Compute A.beta.comm
-         *******************************/
-        for (h = 0; h < pp; h++) {
-          tmp_pp[h] = SigmaBetaCommInv[h] + N * TauBetaInv[h]; 
-        }
-        F77_NAME(dpotrf)(lower, &p, tmp_pp, &p, &info FCONE); 
-        if(info != 0){error("c++ error: dpotrf ABetaComm failed\n");}
-        F77_NAME(dpotri)(lower, &p, tmp_pp, &p, &info FCONE); 
-        if(info != 0){error("c++ error: dpotri ABetaComm failed\n");}
-        // A.beta.inv %*% b.beta
-        // 1 * tmp_pp * tmp_p + 0 * tmp_p2  = tmp_p2
-        F77_NAME(dsymv)(lower, &p, &one, tmp_pp, &p, tmp_p, &inc, &zero, tmp_p2, &inc FCONE);
-        // Computes cholesky of tmp_pp again stored back in tmp_pp. This chol(A.beta.inv)
-        F77_NAME(dpotrf)(lower, &p, tmp_pp, &p, &info FCONE); 
-        if(info != 0){error("c++ error: dpotrf ABetaComm failed\n");}
-        // Args: destination, mu, cholesky of the inverse covariance matrix, dimension
-        mvrnorm(betaComm, tmp_p2, tmp_pp, p);
+          /********************************
+           Compute A.beta.comm
+           *******************************/
+          for (h = 0; h < pp; h++) {
+            tmp_pp[h] = SigmaBetaCommInv[h] + N * TauBetaInv[h]; 
+          }
+          F77_NAME(dpotrf)(lower, &p, tmp_pp, &p, &info FCONE); 
+          if(info != 0){error("c++ error: dpotrf ABetaComm failed\n");}
+          F77_NAME(dpotri)(lower, &p, tmp_pp, &p, &info FCONE); 
+          if(info != 0){error("c++ error: dpotri ABetaComm failed\n");}
+          // A.beta.inv %*% b.beta
+          // 1 * tmp_pp * tmp_p + 0 * tmp_p2  = tmp_p2
+          F77_NAME(dsymv)(lower, &p, &one, tmp_pp, &p, tmp_p, &inc, &zero, tmp_p2, &inc FCONE);
+          // Computes cholesky of tmp_pp again stored back in tmp_pp. This chol(A.beta.inv)
+          F77_NAME(dpotrf)(lower, &p, tmp_pp, &p, &info FCONE); 
+          if(info != 0){error("c++ error: dpotrf ABetaComm failed\n");}
+          // Args: destination, mu, cholesky of the inverse covariance matrix, dimension
+          mvrnorm(betaComm, tmp_p2, tmp_pp, p);
+	}
         /********************************************************************
          Update Community Occupancy Variance Parameter
         ********************************************************************/
-        for (h = 0; h < p; h++) {
-          tmp_0 = 0.0;  
-          for (i = 0; i < N; i++) {
-            tmp_0 += (beta[h * N + i] - betaComm[h]) * (beta[h * N + i] - betaComm[h]);
+	if (indBetas == 0) {
+          for (h = 0; h < p; h++) {
+            tmp_0 = 0.0;  
+            for (i = 0; i < N; i++) {
+              tmp_0 += (beta[h * N + i] - betaComm[h]) * (beta[h * N + i] - betaComm[h]);
+            } // i
+            tmp_0 *= 0.5;
+            tauSqBeta[h] = rigamma(tauSqBetaA[h] + N / 2.0, tauSqBetaB[h] + tmp_0); 
+          } // h
+          for (h = 0; h < p; h++) {
+            TauBetaInv[h * p + h] = tauSqBeta[h]; 
           } // i
-          tmp_0 *= 0.5;
-          tauSqBeta[h] = rigamma(tauSqBetaA[h] + N / 2.0, tauSqBetaB[h] + tmp_0); 
-        } // h
-        for (h = 0; h < p; h++) {
-          TauBetaInv[h * p + h] = tauSqBeta[h]; 
-        } // i
-        F77_NAME(dpotrf)(lower, &p, TauBetaInv, &p, &info FCONE); 
-        if(info != 0){error("c++ error: dpotrf TauBetaInv failed\n");}
-        F77_NAME(dpotri)(lower, &p, TauBetaInv, &p, &info FCONE); 
-        if(info != 0){error("c++ error: dpotri TauBetaInv failed\n");}
+          F77_NAME(dpotrf)(lower, &p, TauBetaInv, &p, &info FCONE); 
+          if(info != 0){error("c++ error: dpotrf TauBetaInv failed\n");}
+          F77_NAME(dpotri)(lower, &p, TauBetaInv, &p, &info FCONE); 
+          if(info != 0){error("c++ error: dpotri TauBetaInv failed\n");}
+	}
         /********************************************************************
          *Update Occupancy random effects variance
          *******************************************************************/
@@ -501,6 +506,7 @@ extern "C" {
          *Update latent effects (w) 
          *******************************************************************/
         for (ii = 0; ii < J; ii++) {
+          zeros(tmp_Nq, Nq);
           // tmp_qq = lambda' S_beta lambda 
           for (i = 0; i < N; i++) {
             if (z[ii * N + i] == 1.0) {
@@ -522,6 +528,7 @@ extern "C" {
           if (info != 0){error("c++ error: dpotri var failed\n");}
 
           // mu
+	  zeros(tmp_N, N);
           for (k = 0; k < N; k++) {
             if (z[ii * N + k] == 1.0) {
               tmp_N[k] = (y[ii * N + k] - F77_NAME(ddot)(&p, &X[ii], &J, &beta[k], &N) - betaStarSites[k * J + ii]) / tauSq[k];
@@ -566,6 +573,8 @@ extern "C" {
            *mu
            *****************************/
           // zStar - X %*% beta
+	  zeros(tmp_J, J); 
+	  zeros(tmp_Jq, Jq);
           for (j = 0; j < J; j++) {
             if (z[j * N + i] == 1.0) {
               tmp_J[j] = y[j * N + i] - F77_NAME(ddot)(&p, &X[j], &J, &beta[i], &N) -
@@ -579,10 +588,10 @@ extern "C" {
 
           // S_beta %*% W' = tmp_Jq
           // aka multiply W[j, ] by omegaOcc[j] of the current species you're on. 
-          for (j = 0, l = 0; j < J; j++) {
+          for (j = 0; j < J; j++) {
             if (z[j * N + i] == 1.0) {
-              for (ll = 0; ll < q; ll++, l++) {
-                tmp_Jq[l] = w[j * q + ll] / tauSq[i];  
+              for (ll = 0; ll < q; ll++) {
+                tmp_Jq[j * q + ll] = w[j * q + ll] / tauSq[i];  
               }
 	    }
           }
