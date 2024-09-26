@@ -112,6 +112,10 @@ msDS <- function(abund.formula, det.formula, data, inits, priors, tuning,
   if (n.thin > n.samples) {
     stop("error: n.thin must be less than n.samples")
   }
+  # Check if n.burn, n.thin, and n.samples result in an integer and error if otherwise.
+  if (((n.samples - n.burn) / n.thin) %% 1 != 0) {
+    stop("the number of posterior samples to save ((n.samples - n.burn) / n.thin) is not a whole number. Please respecify the MCMC criteria such that the number of posterior samples saved is a whole number.")
+  }
 
   data$covs <- as.data.frame(data$covs)
 
@@ -713,7 +717,7 @@ msDS <- function(abund.formula, det.formula, data, inits, priors, tuning,
       }
     }
     beta.star.indx <- rep(0:(p.abund.re - 1), n.abund.re.long)
-    beta.star.inits <- rnorm(n.abund.re, sqrt(sigma.sq.mu.inits[beta.star.indx + 1]))
+    beta.star.inits <- rnorm(n.abund.re, 0, sqrt(sigma.sq.mu.inits[beta.star.indx + 1]))
     # Starting values for all species
     beta.star.inits <- rep(beta.star.inits, n.sp)
   } else {
@@ -979,7 +983,7 @@ msDS <- function(abund.formula, det.formula, data, inits, priors, tuning,
       alpha.inits <- matrix(runif(n.sp * p.det, -10, 10), n.sp, p.det)
       if (p.abund.re > 0) {
         sigma.sq.mu.inits <- runif(p.abund.re, 0.05, 1)
-        beta.star.inits <- rnorm(n.abund.re, sqrt(sigma.sq.mu.inits[beta.star.indx + 1]))
+        beta.star.inits <- rnorm(n.abund.re, 0, sqrt(sigma.sq.mu.inits[beta.star.indx + 1]))
         beta.star.inits <- rep(beta.star.inits, n.sp)
       }
       if (p.det.re > 0) {

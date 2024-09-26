@@ -19,52 +19,46 @@
 
 extern "C" {
 
-  SEXP sfMsAbundNNGPPredict(SEXP coords_r, SEXP J_r, SEXP nObs_r, SEXP family_r, SEXP nSp_r,
-                            SEXP q_r, SEXP pAbund_r, SEXP m_r, SEXP X0_r, SEXP coords0_r,
-                            SEXP J0_r, SEXP nObs0_r, SEXP sitesLink_r, SEXP sites0Sampled_r,
-                            SEXP sites0_r, SEXP nnIndx0_r, SEXP betaSamples_r,
-                            SEXP thetaSamples_r, SEXP kappaSamples_r, SEXP lambdaSamples_r,
-                            SEXP wSamples_r, SEXP betaStarSiteSamples_r,
-                            SEXP nSamples_r, SEXP covModel_r, SEXP nThreads_r, SEXP verbose_r,
-                            SEXP nReport_r){
+  SEXP svcAbundGaussianNNGPPredict(SEXP coords_r, SEXP J_r, SEXP family_r,
+                                   SEXP pAbund_r, SEXP pTilde_r,
+                                   SEXP m_r, SEXP X0_r, SEXP Xw0_r, SEXP coords0_r,
+                                   SEXP J0_r, SEXP nnIndx0_r, SEXP betaSamples_r,
+                                   SEXP thetaSamples_r, SEXP tauSqSamples_r, SEXP wSamples_r,
+                                   SEXP betaStarSiteSamples_r, SEXP sitesLink_r,
+                                   SEXP sites0Sampled_r, SEXP sites0_r, SEXP nSamples_r,
+                                   SEXP covModel_r, SEXP nThreads_r, SEXP verbose_r,
+                                   SEXP nReport_r, SEXP z0Samples_r){
 
-    int i, j, k, l, s, info, nProtect=0, ll;
+    int i, j, ll, k, l, s, info, nProtect=0;
     const int inc = 1;
     const double one = 1.0;
-    char const *ntran = "N";
     const double zero = 0.0;
     char const *lower = "L";
 
     double *coords = REAL(coords_r);
     int J = INTEGER(J_r)[0];
-    int nSp = INTEGER(nSp_r)[0];
-    int q = INTEGER(q_r)[0];
     int pAbund = INTEGER(pAbund_r)[0];
-    int pAbundnSp = pAbund * nSp;
-    int Jq = J * q;
-    int nSpq = nSp * q;
+    int pTilde = INTEGER(pTilde_r)[0];
     int family = INTEGER(family_r)[0];
 
     double *X0 = REAL(X0_r);
+    double *Xw0 = REAL(Xw0_r);
     double *coords0 = REAL(coords0_r);
     int J0 = INTEGER(J0_r)[0];
-    int J0nSp = J0 * nSp;
-    int J0q = J0 * q;
-    int nObs0 = INTEGER(nObs0_r)[0];
-    int nObs0nSp = nObs0 * nSp;
     int m = INTEGER(m_r)[0];
     int mm = m * m;
+    int JpTilde = J * pTilde;
+    int J0pTilde = J0 * pTilde;
     int *sitesLink = INTEGER(sitesLink_r);
     int *sites0Sampled = INTEGER(sites0Sampled_r);
-    int *sites0 = INTEGER(sites0_r);
 
     int *nnIndx0 = INTEGER(nnIndx0_r);
     double *beta = REAL(betaSamples_r);
-    double *kappa = REAL(kappaSamples_r);
     double *theta = REAL(thetaSamples_r);
-    double *lambda = REAL(lambdaSamples_r);
     double *w = REAL(wSamples_r);
     double *betaStarSite = REAL(betaStarSiteSamples_r);
+    double *tauSq = REAL(tauSqSamples_r);
+    double *z0 = REAL(z0Samples_r);
 
     int nSamples = INTEGER(nSamples_r)[0];
     int covModel = INTEGER(covModel_r)[0];
@@ -77,7 +71,7 @@ extern "C" {
     omp_set_num_threads(nThreads);
 #else
     if(nThreads > 1){
-      Rf_warning("n.omp.threads > 1, but source not compiled with OpenMP support.");
+      Rf_warning("n.omp.threads > %i, but source not compiled with OpenMP support.", nThreads);
       nThreads = 1;
     }
 #endif
@@ -86,13 +80,13 @@ extern "C" {
       Rprintf("----------------------------------------\n");
       Rprintf("\tPrediction description\n");
       Rprintf("----------------------------------------\n");
-      Rprintf("Spatial Factor NNGP GLMM with %i observations.\n\n", J);
-      Rprintf("Number of covariates %i (including intercept if specified).\n\n", pAbund);
+      Rprintf("NNGP Model fit with %i observations.\n\n", J);
+      Rprintf("Number of covariates: %i (including intercept if specified).\n\n", pAbund);
+      Rprintf("Number of spatially-varying coefficients: %i (including intercept if specified).\n\n", pTilde);
       Rprintf("Using the %s spatial correlation model.\n\n", corName.c_str());
-      Rprintf("Using %i nearest neighbors.\n", m);
-      Rprintf("Using %i latent spatial factors.\n\n", q);
-      Rprintf("Number of MCMC samples %i.\n\n", nSamples);
-      Rprintf("Predicting at %i non-sampled locations.\n\n", J0);
+      Rprintf("Using %i nearest neighbors.\n\n", m);
+      Rprintf("Number of MCMC samples: %i.\n\n", nSamples);
+      Rprintf("Predicting at %i locations.\n\n", J0);
 #ifdef _OPENMP
       Rprintf("\nSource compiled with OpenMP support and model fit using %i threads.\n", nThreads);
 #else
@@ -101,32 +95,31 @@ extern "C" {
     }
 
     // parameters
-    int nTheta, phiIndx, nuIndx;
+    int nTheta, sigmaSqIndx,  phiIndx, nuIndx;
 
-    // NOTE: this differs from other non-factor modeling functions
     if (corName != "matern") {
-      nTheta = 1; //phi
-      phiIndx = 0;
-    } else{
-	nTheta = 2; //phi, nu
-	phiIndx = 0; nuIndx = 1;
+      nTheta = 2; //sigma^2, phi
+      sigmaSqIndx = 0; phiIndx = 1;
+      } else{
+	nTheta = 3; //sigma^2, phi, nu
+	sigmaSqIndx = 0; phiIndx = 1; nuIndx = 2;
       }
+    int nThetapTilde = nTheta * pTilde;
 
-    int nThetaq = nTheta * q;
     // get max nu
-    double *nuMax = (double *) R_alloc(q, sizeof(double));
-    int *nb = (int *) R_alloc(q, sizeof(nb));
+    double *nuMax = (double *) R_alloc(pTilde, sizeof(double));
+    int *nb = (int *) R_alloc(pTilde, sizeof(nb));
     // Fill in with zeros
-    for (ll = 0; ll < q; ll++) {
+    for (ll = 0; ll < pTilde; ll++) {
       nuMax[ll] = 0.0;
       nb[ll] = 0;
     }
 
     if(corName == "matern"){
-      for (ll = 0; ll < q; ll++) {
+      for (ll = 0; ll < pTilde; ll++) {
         for(s = 0; s < nSamples; s++){
-          if(theta[s*nThetaq + nuIndx * q + ll] > nuMax[ll]){
-            nuMax[ll] = theta[s*nThetaq + nuIndx * q + ll];
+          if(theta[s*nThetapTilde + nuIndx * pTilde + ll] > nuMax[ll]){
+            nuMax[ll] = theta[s*nThetapTilde + nuIndx * pTilde + ll];
           }
         }
         nb[ll] = 1+static_cast<int>(floor(nuMax[ll]));
@@ -134,27 +127,29 @@ extern "C" {
     }
 
     int nbMax = 0;
-    for (ll = 0; ll < q; ll++) {
+    for (ll = 0; ll < pTilde; ll++) {
       if (nb[ll] > nbMax) {
         nbMax = nb[ll];
       }
     }
 
     double *bk = (double *) R_alloc(nThreads*nbMax, sizeof(double));
+
     double *C = (double *) R_alloc(nThreads*mm, sizeof(double)); zeros(C, nThreads*mm);
     double *c = (double *) R_alloc(nThreads*m, sizeof(double)); zeros(c, nThreads*m);
     double *tmp_m  = (double *) R_alloc(nThreads*m, sizeof(double));
-    double phi = 0, nu = 0, sigmaSq = 1.0, d;
+    double phi = 0, nu = 0, sigmaSq = 0, d;
     int threadID = 0, status = 0;
 
     SEXP y0_r, w0_r, mu0_r;
-    PROTECT(y0_r = Rf_allocMatrix(REALSXP, nObs0nSp, nSamples)); nProtect++;
-    PROTECT(mu0_r = Rf_allocMatrix(REALSXP, nObs0nSp, nSamples)); nProtect++;
-    PROTECT(w0_r = Rf_allocMatrix(REALSXP, J0q, nSamples)); nProtect++;
+    PROTECT(y0_r = Rf_allocMatrix(REALSXP, J0, nSamples)); nProtect++;
+    PROTECT(mu0_r = Rf_allocMatrix(REALSXP, J0, nSamples)); nProtect++;
+    PROTECT(w0_r = Rf_allocMatrix(REALSXP, J0pTilde, nSamples)); nProtect++;
     double *y0 = REAL(y0_r);
     double *mu0 = REAL(mu0_r);
     double *w0 = REAL(w0_r);
-    double *w0Star = (double *) R_alloc(nSamples * J0nSp, sizeof(double));
+    double wSites;
+
     if (verbose) {
       Rprintf("-------------------------------------------------\n");
       Rprintf("\t\tPredicting\n");
@@ -165,16 +160,16 @@ extern "C" {
     }
 
     int vIndx = -1;
-    double *wV = (double *) R_alloc(J0q*nSamples, sizeof(double));
+    double *wV = (double *) R_alloc(J0pTilde*nSamples, sizeof(double));
 
     GetRNGstate();
 
-    for(i = 0; i < J0q*nSamples; i++){
+    for(i = 0; i < J0pTilde*nSamples; i++){
       wV[i] = rnorm(0.0,1.0);
     }
 
     for(j = 0; j < J0; j++){
-      for (ll = 0; ll < q; ll++) {
+      for (ll = 0; ll < pTilde; ll++) {
 #ifdef _OPENMP
 #pragma omp parallel for private(threadID, phi, nu, sigmaSq, k, l, d, info)
 #endif
@@ -183,13 +178,13 @@ extern "C" {
 	  threadID = omp_get_thread_num();
 #endif
 	  if (sites0Sampled[j] == 1) {
-            w0[s * J0q + j * q + ll] = w[s * Jq + sitesLink[j] * q + ll];
+            w0[s * J0pTilde + j * pTilde + ll] = w[s * JpTilde + sitesLink[j] * pTilde + ll];
 	  } else {
-	    phi = theta[s * nThetaq + phiIndx * q + ll];
+	    phi = theta[s * nThetapTilde + phiIndx * pTilde + ll];
 	    if(corName == "matern"){
-	      nu = theta[s * nThetaq + nuIndx * q + ll];
+	      nu = theta[s * nThetapTilde + nuIndx * pTilde + ll];
 	    }
-	    sigmaSq = 1.0;
+	    sigmaSq = theta[s * nThetapTilde + sigmaSqIndx * pTilde + ll];
 
 	    for(k = 0; k < m; k++){
 	      d = dist2(coords[nnIndx0[j+J0*k]], coords[J+nnIndx0[j+J0*k]], coords0[j], coords0[J0+j]);
@@ -209,7 +204,7 @@ extern "C" {
 
 	    d = 0;
 	    for(k = 0; k < m; k++){
-	      d += tmp_m[threadID*m+k]*w[s*Jq+nnIndx0[j+J0*k] * q + ll];
+	      d += tmp_m[threadID*m+k]*w[s*JpTilde+nnIndx0[j+J0*k] * pTilde + ll];
 	    }
 
 	    #ifdef _OPENMP
@@ -217,11 +212,11 @@ extern "C" {
             #endif
 	    vIndx++;
 
-	    w0[s * J0q + j * q + ll] = sqrt(sigmaSq - F77_NAME(ddot)(&m, &tmp_m[threadID*m], &inc, &c[threadID*m], &inc))*wV[vIndx] + d;
+	    w0[s * J0pTilde + j * pTilde + ll] = sqrt(sigmaSq - F77_NAME(ddot)(&m, &tmp_m[threadID*m], &inc, &c[threadID*m], &inc))*wV[vIndx] + d;
 	  }
 
         } // sample
-      } // factor
+      } // covariate
 
       if(verbose){
 	if(status == nReport){
@@ -243,24 +238,34 @@ extern "C" {
       #endif
     }
 
-    // Generate abundance after the fact.
+    // Generate latent occurrence state after the fact.
     if (verbose) {
-      Rprintf("Generating abundance predictions\n");
+      Rprintf("Generating abundance estimates\n");
     }
-    for (j = 0; j < nObs0; j++) {
-      for (s = 0; s < nSamples; s++) {
-          F77_NAME(dgemv)(ntran, &nSp, &q, &one, &lambda[s * nSpq], &nSp, &w0[s * J0q + sites0[j]*q], &inc, &zero, &w0Star[s * J0nSp + sites0[j] * nSp], &inc FCONE);
-	  for (i = 0; i < nSp; i++) {
-	    mu0[s * nObs0nSp + j * nSp + i] = exp(F77_NAME(ddot)(&pAbund, &X0[j], &nObs0, &beta[s*pAbundnSp + i], &nSp) + w0Star[s * J0nSp + sites0[j] * nSp + i] + betaStarSite[s*nObs0nSp + j * nSp + i]);
-	    if (family == 1) {
-	      y0[s * nObs0nSp + j * nSp + i] = rnbinom_mu(kappa[s * nSp + i], mu0[s * nObs0nSp + j * nSp + i]);
-	    } else {
-	      y0[s * nObs0nSp + j * nSp + i] = rpois(mu0[s * nObs0nSp + j * nSp + i]);
-	    }
-	  } // i
+    for(j = 0; j < J0; j++){
+      for(s = 0; s < nSamples; s++){
+        if (family == 3) {
+          if (z0[s * J0 + j] == 1.0) {
+          wSites = F77_NAME(ddot)(&pTilde, &Xw0[j], &J0,
+	  		        &w0[s * J0pTilde + j * pTilde], &inc);
+	    mu0[s * J0 + j] = F77_NAME(ddot)(&pAbund, &X0[j], &J0,
+				                     &beta[s*pAbund], &inc) +
+			              wSites + betaStarSite[s * J0 + j];
+            y0[s * J0 + j] = rnorm(mu0[s * J0 + j], sqrt(tauSq[s]));
+	  } else {
+            mu0[s * J0 + j] = 0.0;
+	    y0[s * J0 + j] = rnorm(mu0[s * J0 + j], sqrt(0.0001));
+	  }
+	} else {
+          wSites = F77_NAME(ddot)(&pTilde, &Xw0[j], &J0,
+	  		        &w0[s * J0pTilde + j * pTilde], &inc);
+	  mu0[s * J0 + j] = F77_NAME(ddot)(&pAbund, &X0[j], &J0,
+				                     &beta[s*pAbund], &inc) +
+			              wSites + betaStarSite[s * J0 + j];
+          y0[s * J0 + j] = rnorm(mu0[s * J0 + j], sqrt(tauSq[s]));
+	}
       } // s
-      R_CheckUserInterrupt();
-    } // j
+    } // i
 
     PutRNGstate();
 
@@ -289,5 +294,6 @@ extern "C" {
 
   }
 }
+
 
 

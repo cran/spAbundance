@@ -18,7 +18,7 @@
 # define FCONE
 #endif
 
-void updateBFGaus(double *B, double *F, double *c, double *C, double *coords, int *nnIndx, int *nnIndxLU, int n, int m, double sigmaSq, double phi, double nu, int covModel, double *bk, double nuUnifb){
+void updateBFSVCNNGP(double *B, double *F, double *c, double *C, double *coords, int *nnIndx, int *nnIndxLU, int n, int m, double sigmaSq, double phi, double nu, int covModel, double *bk, double nuUnifb){
 
   int i, k, l;
   int info = 0;
@@ -62,28 +62,26 @@ void updateBFGaus(double *B, double *F, double *c, double *C, double *coords, in
 }
 
 extern "C" {
-  SEXP spAbundGaussianNNGP(SEXP y_r, SEXP X_r, SEXP coords_r, SEXP XRE_r, SEXP XRandom_r,
-                           SEXP consts_r, SEXP nRELong_r, SEXP m_r, SEXP nnIndx_r,
-                           SEXP nnIndxLU_r, SEXP uIndx_r, SEXP uIndxLU_r, SEXP uiIndx_r,
-                           SEXP betaStarting_r, SEXP tauSqStarting_r, SEXP sigmaSqMuStarting_r,
-                           SEXP betaStarStarting_r,
-                           SEXP wStarting_r, SEXP phiStarting_r,
-                           SEXP sigmaSqStarting_r, SEXP nuStarting_r,
-                           SEXP betaStarIndx_r, SEXP betaLevelIndx_r,
-                           SEXP muBeta_r, SEXP SigmaBeta_r,
-                           SEXP tauSqA_r, SEXP tauSqB_r, SEXP phiA_r, SEXP phiB_r,
-                           SEXP sigmaSqA_r, SEXP sigmaSqB_r, SEXP nuA_r, SEXP nuB_r,
-                           SEXP sigmaSqMuA_r, SEXP sigmaSqMuB_r,
-                           SEXP tuning_r, SEXP covModel_r, SEXP nBatch_r,
-                           SEXP batchLength_r, SEXP acceptRate_r,
-                           SEXP nThreads_r, SEXP verbose_r,
-                           SEXP nReport_r, SEXP samplesInfo_r, SEXP chainInfo_r,
-                           SEXP sigmaSqIG_r){
+  SEXP svcAbundGaussianNNGP(SEXP y_r, SEXP X_r, SEXP Xw_r, SEXP coords_r, SEXP XRE_r, SEXP XRandom_r,
+                            SEXP consts_r, SEXP nRELong_r, SEXP m_r, SEXP nnIndx_r,
+                            SEXP nnIndxLU_r, SEXP uIndx_r, SEXP uIndxLU_r, SEXP uiIndx_r,
+                            SEXP betaStarting_r, SEXP tauSqStarting_r, SEXP sigmaSqMuStarting_r,
+                            SEXP betaStarStarting_r,
+                            SEXP wStarting_r, SEXP phiStarting_r,
+                            SEXP sigmaSqStarting_r, SEXP nuStarting_r,
+                            SEXP betaStarIndx_r, SEXP betaLevelIndx_r,
+                            SEXP muBeta_r, SEXP SigmaBeta_r,
+                            SEXP tauSqA_r, SEXP tauSqB_r, SEXP phiA_r, SEXP phiB_r,
+                            SEXP sigmaSqA_r, SEXP sigmaSqB_r, SEXP nuA_r, SEXP nuB_r,
+                            SEXP sigmaSqMuA_r, SEXP sigmaSqMuB_r,
+                            SEXP tuning_r, SEXP covModel_r, SEXP nBatch_r,
+                            SEXP batchLength_r, SEXP acceptRate_r, SEXP nThreads_r, SEXP verbose_r,
+                            SEXP nReport_r, SEXP samplesInfo_r, SEXP chainInfo_r){
 
     /**********************************************************************
      * Initial constants
      * *******************************************************************/
-    int i, j, l, ll, k, s, r, q, info, nProtect=0;
+    int i, j, l, ll, ii, k, s, r, q, info, nProtect=0;
     int status = 0; // For AMCMC.
     const int inc = 1;
     const double one = 1.0;
@@ -98,6 +96,8 @@ extern "C" {
      * *******************************************************************/
     double *y = REAL(y_r);
     double *X = REAL(X_r);
+    // Order: covariate, site
+    double *Xw = REAL(Xw_r);
     int *XRE = INTEGER(XRE_r);
     double *XRandom = REAL(XRandom_r);
     int m = INTEGER(m_r)[0];
@@ -106,23 +106,25 @@ extern "C" {
     int p = INTEGER(consts_r)[1];
     int pRE = INTEGER(consts_r)[2];
     int nRE = INTEGER(consts_r)[3];
-    int JZero = INTEGER(consts_r)[4];
-    int saveFitted = INTEGER(consts_r)[5];
+    int pTilde = INTEGER(consts_r)[4];
+    int JZero = INTEGER(consts_r)[5];
     int pp = p * p;
+    int ppTilde = pTilde * pTilde;
+    int JpTilde = J * pTilde;
     int JpRE = J * pRE;
     // Priors
     double *muBeta = (double *) R_alloc(p, sizeof(double));
     F77_NAME(dcopy)(&p, REAL(muBeta_r), &inc, muBeta, &inc);
     double *SigmaBetaInv = (double *) R_alloc(pp, sizeof(double));
     F77_NAME(dcopy)(&pp, REAL(SigmaBeta_r), &inc, SigmaBetaInv, &inc);
-    double phiA = REAL(phiA_r)[0];
-    double phiB = REAL(phiB_r)[0];
-    double nuA = REAL(nuA_r)[0];
-    double nuB = REAL(nuB_r)[0];
-    double sigmaSqA = REAL(sigmaSqA_r)[0];
-    double sigmaSqB = REAL(sigmaSqB_r)[0];
+    double *phiA = REAL(phiA_r);
+    double *phiB = REAL(phiB_r);
+    double *nuA = REAL(nuA_r);
+    double *nuB = REAL(nuB_r);
     double tauSqA = REAL(tauSqA_r)[0];
     double tauSqB = REAL(tauSqB_r)[0];
+    double *sigmaSqA = REAL(sigmaSqA_r);
+    double *sigmaSqB = REAL(sigmaSqB_r);
     double *sigmaSqMuA = REAL(sigmaSqMuA_r);
     double *sigmaSqMuB = REAL(sigmaSqMuB_r);
     double *tuning = REAL(tuning_r);
@@ -149,7 +151,6 @@ extern "C" {
     int nThreads = INTEGER(nThreads_r)[0];
     int verbose = INTEGER(verbose_r)[0];
     int nReport = INTEGER(nReport_r)[0];
-    int sigmaSqIG = INTEGER(sigmaSqIG_r)[0];
     int thinIndx = 0;
     int sPost = 0;
 
@@ -170,16 +171,13 @@ extern "C" {
         Rprintf("----------------------------------------\n");
         Rprintf("\tModel description\n");
         Rprintf("----------------------------------------\n");
-	if (JZero > 0) {
-          Rprintf("Spatial NNGP zero-inflated Gaussian model with %i non-zero sites.\n\n", J);
-	} else {
-          Rprintf("Spatial NNGP Gaussian model with %i sites.\n\n", J);
-	}
+        Rprintf("Spatial NNGP model with %i sites.\n\n", J);
         Rprintf("Samples per chain: %i (%i batches of length %i)\n", nSamples, nBatch, batchLength);
         Rprintf("Burn-in: %i \n", nBurn);
         Rprintf("Thinning Rate: %i \n", nThin);
         Rprintf("Number of Chains: %i \n", nChain);
         Rprintf("Total Posterior Samples: %i \n\n", nPost * nChain);
+        Rprintf("Number of spatially-varying coefficients: %i \n", pTilde);
         Rprintf("Using the %s spatial correlation model.\n\n", corName.c_str());
         Rprintf("Using %i nearest neighbors.\n\n", m);
 #ifdef _OPENMP
@@ -210,16 +208,19 @@ extern "C" {
     double *betaStar = (double *) R_alloc(nRE, sizeof(double));
     F77_NAME(dcopy)(&nRE, REAL(betaStarStarting_r), &inc, betaStar, &inc);
     // Spatial processes
-    double *w = (double *) R_alloc(J, sizeof(double));
-    F77_NAME(dcopy)(&J, REAL(wStarting_r), &inc, w, &inc);
+    double *w = (double *) R_alloc(JpTilde, sizeof(double));
+    F77_NAME(dcopy)(&JpTilde, REAL(wStarting_r), &inc, w, &inc);
     // Spatial variance
-    double sigmaSq = REAL(sigmaSqStarting_r)[0];
+    double *sigmaSq = (double *) R_alloc(pTilde, sizeof(double));
+    F77_NAME(dcopy)(&pTilde, REAL(sigmaSqStarting_r), &inc, sigmaSq, &inc);
     // Nugget
     double tauSq = REAL(tauSqStarting_r)[0];
     // Spatial range parameter
-    double phi = REAL(phiStarting_r)[0];
+    double *phi = (double *) R_alloc(pTilde, sizeof(double));
+    F77_NAME(dcopy)(&pTilde, REAL(phiStarting_r), &inc, phi, &inc);
     // Spatial smoothing parameter for Matern
-    double nu = REAL(nuStarting_r)[0];
+    double *nu = (double *) R_alloc(pTilde, sizeof(double));
+    F77_NAME(dcopy)(&pTilde, REAL(nuStarting_r), &inc, nu, &inc);
 
     /**********************************************************************
      * Return Stuff
@@ -228,22 +229,17 @@ extern "C" {
     PROTECT(betaSamples_r = Rf_allocMatrix(REALSXP, p, nPost)); nProtect++;
     zeros(REAL(betaSamples_r), p * nPost);
     SEXP yRepSamples_r;
+    PROTECT(yRepSamples_r = Rf_allocMatrix(REALSXP, J, nPost)); nProtect++;
+    zeros(REAL(yRepSamples_r), J * nPost);
     SEXP yRepZeroSamples_r;
-    SEXP muSamples_r;
-    SEXP likeSamples_r;
-    if (saveFitted == 1) {
-      PROTECT(yRepSamples_r = Rf_allocMatrix(REALSXP, J, nPost)); nProtect++;
-      zeros(REAL(yRepSamples_r), J * nPost);
-      PROTECT(yRepZeroSamples_r = Rf_allocMatrix(REALSXP, JZero, nPost)); nProtect++;
-      zeros(REAL(yRepZeroSamples_r), JZero * nPost);
-      PROTECT(muSamples_r = Rf_allocMatrix(REALSXP, J, nPost)); nProtect++;
-      zeros(REAL(muSamples_r), J * nPost);
-      PROTECT(likeSamples_r = Rf_allocMatrix(REALSXP, J, nPost)); nProtect++;
-      zeros(REAL(likeSamples_r), J * nPost);
-    }
+    PROTECT(yRepZeroSamples_r = Rf_allocMatrix(REALSXP, JZero, nPost)); nProtect++;
+    zeros(REAL(yRepZeroSamples_r), JZero * nPost);
     SEXP wSamples_r;
-    PROTECT(wSamples_r = Rf_allocMatrix(REALSXP, J, nPost)); nProtect++;
-    zeros(REAL(wSamples_r), J * nPost);
+    PROTECT(wSamples_r = Rf_allocMatrix(REALSXP, JpTilde, nPost)); nProtect++;
+    zeros(REAL(wSamples_r), JpTilde * nPost);
+    SEXP muSamples_r;
+    PROTECT(muSamples_r = Rf_allocMatrix(REALSXP, J, nPost)); nProtect++;
+    zeros(REAL(muSamples_r), J * nPost);
     // Occurrence random effects
     SEXP sigmaSqMuSamples_r;
     SEXP betaStarSamples_r;
@@ -256,6 +252,10 @@ extern "C" {
     SEXP tauSqSamples_r;
     PROTECT(tauSqSamples_r = Rf_allocMatrix(REALSXP, inc, nPost)); nProtect++;
     zeros(REAL(tauSqSamples_r), nPost);
+    // Likelihood samples for WAIC.
+    SEXP likeSamples_r;
+    PROTECT(likeSamples_r = Rf_allocMatrix(REALSXP, J, nPost)); nProtect++;
+    zeros(REAL(likeSamples_r), J * nPost);
 
     /**********************************************************************
      * Other initial starting stuff
@@ -273,6 +273,8 @@ extern "C" {
     }
     double *tmp_Jp = (double *) R_alloc(Jp, sizeof(double));
     double *tmp_J1 = (double *) R_alloc(J, sizeof(double));
+    double *tmp_pTilde = (double *) R_alloc(pTilde, sizeof(double));
+    double * tmp_ppTilde = (double *) R_alloc(ppTilde, sizeof(double));
 
     // For latent occupancy
     double *mu = (double *) R_alloc(J, sizeof(double));
@@ -322,44 +324,64 @@ extern "C" {
       nTheta = 3; // sigma^2, phi, nu
       sigmaSqIndx = 0; phiIndx = 1; nuIndx = 2;
     }
-    double *accept = (double *) R_alloc(nTheta, sizeof(double)); zeros(accept, nTheta);
-    double *theta = (double *) R_alloc(nTheta, sizeof(double));
-    double logPostThetaCurr = 0.0, logPostThetaCand = 0.0;
+    int nThetapTilde = nTheta * pTilde;
+    double *accept = (double *) R_alloc(nThetapTilde, sizeof(double)); zeros(accept, nThetapTilde);
+    double *theta = (double *) R_alloc(nThetapTilde, sizeof(double));
+    double logPostCurr = 0.0, logPostCand = 0.0;
     double logDet;
-    double phiCand = 0.0, nuCand = 0.0, sigmaSqCand = 0.0;
+    double phiCand = 0.0, nuCand = 0.0;
     SEXP acceptSamples_r;
-    PROTECT(acceptSamples_r = Rf_allocMatrix(REALSXP, nTheta, nBatch)); nProtect++;
-    zeros(REAL(acceptSamples_r), nTheta * nBatch);
+    PROTECT(acceptSamples_r = Rf_allocMatrix(REALSXP, nThetapTilde, nBatch)); nProtect++;
+    zeros(REAL(acceptSamples_r), nThetapTilde * nBatch);
     SEXP tuningSamples_r;
-    PROTECT(tuningSamples_r = Rf_allocMatrix(REALSXP, nTheta, nBatch)); nProtect++;
-    zeros(REAL(tuningSamples_r), nTheta * nBatch);
+    PROTECT(tuningSamples_r = Rf_allocMatrix(REALSXP, nThetapTilde, nBatch)); nProtect++;
+    zeros(REAL(tuningSamples_r), nThetapTilde * nBatch);
     SEXP thetaSamples_r;
-    PROTECT(thetaSamples_r = Rf_allocMatrix(REALSXP, nTheta, nPost)); nProtect++;
-    zeros(REAL(thetaSamples_r), nTheta * nPost);
-    double a, v, b, e, muNNGP, var, aij;
-    theta[sigmaSqIndx] = sigmaSq;
-    theta[phiIndx] = phi;
-    if (corName == "matern") {
-      theta[nuIndx] = nu;
-    }
+    PROTECT(thetaSamples_r = Rf_allocMatrix(REALSXP, nThetapTilde, nPost)); nProtect++;
+    zeros(REAL(thetaSamples_r), nThetapTilde * nPost);
+    double b, e, aij, aa;
+    double *a = (double *) R_alloc(pTilde, sizeof(double));
+    double *v = (double *) R_alloc(pTilde, sizeof(double));
+    double *muNNGP = (double *) R_alloc(pTilde, sizeof(double));
+    double *var = (double *) R_alloc(ppTilde, sizeof(double)); zeros(var, ppTilde);
+    double *ff = (double *) R_alloc(pTilde, sizeof(double));
+    double *gg = (double *) R_alloc(pTilde, sizeof(double));
+    // Initiate spatial values
+    for (i = 0; i < pTilde; i++) {
+      theta[sigmaSqIndx * pTilde + i] = sigmaSq[i];
+      theta[phiIndx * pTilde + i] = phi[i];
+      if (corName == "matern") {
+        theta[nuIndx * pTilde + i] = nu[i];
+      }
+    } // i
     // Allocate for the U index vector that keep track of which locations have
     // the i-th location as a neighbor
     int nIndx = static_cast<int>(static_cast<double>(1+m)/2*m+(J-m-1)*m);
 
     // For NNGP
     int mm = m*m;
-    double *B = (double *) R_alloc(nIndx, sizeof(double));
-    double *F = (double *) R_alloc(J, sizeof(double));
+    double *B = (double *) R_alloc(nIndx * pTilde, sizeof(double));
+    double *F = (double *) R_alloc(J * pTilde, sizeof(double));
     double *BCand = (double *) R_alloc(nIndx, sizeof(double));
     double *FCand = (double *) R_alloc(J, sizeof(double));
-    double *c =(double *) R_alloc(m*nThreads, sizeof(double));
-    double *C = (double *) R_alloc(mm*nThreads, sizeof(double));
-    int sizeBK = nThreads*(1.0+static_cast<int>(floor(nuB)));
-    double *bk = (double *) R_alloc(sizeBK, sizeof(double));
+    double *c =(double *) R_alloc(m*nThreads * pTilde, sizeof(double));
+    double *C = (double *) R_alloc(mm*nThreads * pTilde, sizeof(double));
+    int sizeBK = nThreads*(1.0+static_cast<int>(floor(nuB[0])));
+    double *bk = (double *) R_alloc(pTilde*sizeBK, sizeof(double));
 
     // Initiate B and F for each SVC
-    updateBFGaus(B, F, c, C, coords, nnIndx, nnIndxLU, J, m,
-                 theta[sigmaSqIndx], theta[phiIndx], nu, covModel, bk, nuB);
+    for (i = 0; i < pTilde; i++) {
+    updateBFSVCNNGP(&B[i * nIndx], &F[i*J], &c[i * m*nThreads], &C[i * mm * nThreads], coords, nnIndx, nnIndxLU, J, m, theta[sigmaSqIndx * pTilde + i], theta[phiIndx * pTilde + i], nu[i], covModel, &bk[i * sizeBK], nuB[i]);
+    }
+    // Spatial process sums for each site
+    double *wSites = (double *) R_alloc(J, sizeof(double));
+    // For each location, multiply w x Xw
+    for (j = 0; j < J; j++) {
+      wSites[j] = 0.0;
+      for (ll = 0; ll < pTilde; ll++) {
+        wSites[j] += w[j * pTilde + ll] * Xw[ll * J + j];
+      }
+    }
 
     GetRNGstate();
 
@@ -373,7 +395,7 @@ extern "C" {
          *Update Regression Coefficients
          *******************************************************************/
         for (j = 0; j < J; j++) {
-          tmp_J1[j] = (y[j] - w[j] - betaStarSites[j]) / tauSq;
+          tmp_J1[j] = (y[j] - wSites[j] - betaStarSites[j]) / tauSq;
         } // j
         /********************************
          * Compute b.beta
@@ -436,8 +458,8 @@ extern "C" {
                   tmp_02 += betaStar[betaStarLongIndx[ll * J + j]] * XRandom[ll * J + j];
                 }
                 tmp_one[0] += XRandom[betaStarIndx[l] * J + j] * (y[j] - F77_NAME(ddot)(&p, &X[j], &J, beta, &inc) -
-          		    tmp_02 + (betaStar[l] * XRandom[betaStarIndx[l] * J + j]) -
-			    w[j]) / tauSq;
+                              tmp_02 + (betaStar[l] * XRandom[betaStarIndx[l] * J + j]) -
+                              wSites[j]) / tauSq;
                 tmp_0 += XRandom[betaStarIndx[l] * J + j] * XRandom[betaStarIndx[l] * J + j] / tauSq;
               }
             }
@@ -462,7 +484,7 @@ extern "C" {
          *Update tau.sq
          *******************************************************************/
         for(j = 0; j < J; j++){
-	  tmp_J1[j] = y[j] - w[j] -
+	  tmp_J1[j] = y[j] - wSites[j] -
 	      	F77_NAME(ddot)(&p, &X[j], &J, beta, &inc) - betaStarSites[j];
         }
         tauSq = rigamma(tauSqA + J / 2.0, tauSqB + 0.5 *
@@ -471,183 +493,206 @@ extern "C" {
         /********************************************************************
          *Update w (spatial random effects)
          *******************************************************************/
-	for (i = 0; i < J; i++ ) {
-          a = 0;
-	  v = 0;
-	  if (uIndxLU[J + i] > 0){ // is i a neighbor for anybody
-	    for (j = 0; j < uIndxLU[J+i]; j++){ // how many locations have i as a neighbor
-	      b = 0;
-	      // now the neighbors for the jth location who has i as a neighbor
-	      jj = uIndx[uIndxLU[i]+j]; // jj is the index of the jth location who has i as a neighbor
-	      for(k = 0; k < nnIndxLU[J+jj]; k++){ // these are the neighbors of the jjth location
-	        kk = nnIndx[nnIndxLU[jj]+k]; // kk is the index for the jth locations neighbors
-	        if(kk != i){ //if the neighbor of jj is not i
-	  	b += B[nnIndxLU[jj]+k]*w[kk]; //covariance between jj and kk and the random effect of kk
-	        }
-	      }
-	      aij = w[jj] - b;
-	      a += B[nnIndxLU[jj]+uiIndx[uIndxLU[i]+j]]*aij/F[jj];
-	      v += pow(B[nnIndxLU[jj]+uiIndx[uIndxLU[i]+j]],2)/F[jj];
+	for (ii = 0; ii < J; ii++) {
+
+          for (ll = 0; ll < pTilde; ll++) { // row
+            // tmp_pTilde = X_tilde' %*% omega_beta
+            tmp_pTilde[ll] = Xw[ll * J + ii] / tauSq;
+	    // Compute tmp_pTilde %*% t(Xw)
+	    for (k = 0; k < pTilde; k++) { // column
+              tmp_ppTilde[ll * pTilde + k] = tmp_pTilde[ll] *
+		                             Xw[k * J + ii];
+	    } // k
+
+            a[ll] = 0;
+	    v[ll] = 0;
+
+	    if (uIndxLU[J + ii] > 0){ // is ii a neighbor for anybody
+	      for (j = 0; j < uIndxLU[J+ii]; j++){ // how many locations have ii as a neighbor
+	        b = 0;
+	        // now the neighbors for the jth location who has ii as a neighbor
+	        jj = uIndx[uIndxLU[ii]+j]; // jj is the index of the jth location who has ii as a neighbor
+	        for(k = 0; k < nnIndxLU[J+jj]; k++){ // these are the neighbors of the jjth location
+	          kk = nnIndx[nnIndxLU[jj]+k]; // kk is the index for the jth locations neighbors
+	          if(kk != ii){ //if the neighbor of jj is not ii
+	    	    b += B[ll*nIndx + nnIndxLU[jj]+k]*w[kk * pTilde + ll]; //covariance between jj and kk and the random effect of kk
+	          }
+	        } // k
+	        aij = w[jj * pTilde + ll] - b;
+	        a[ll] += B[ll*nIndx + nnIndxLU[jj]+uiIndx[uIndxLU[ii]+j]]*aij/F[ll*J + jj];
+	        v[ll] += pow(B[ll * nIndx + nnIndxLU[jj]+uiIndx[uIndxLU[ii]+j]],2)/F[ll * J + jj];
+	      } // j
 	    }
+
+	    e = 0;
+	    for(j = 0; j < nnIndxLU[J+ii]; j++){
+	      e += B[ll * nIndx + nnIndxLU[ii]+j]*w[nnIndx[nnIndxLU[ii]+j] * pTilde + ll];
+	    }
+
+	    ff[ll] = 1.0 / F[ll * J + ii];
+	    gg[ll] = e / F[ll * J + ii];
+	  } // ll
+
+	  // var
+	  F77_NAME(dcopy)(&ppTilde, tmp_ppTilde, &inc, var, &inc);
+	  for (k = 0; k < pTilde; k++) {
+            var[k * pTilde + k] += ff[k] + v[k];
+          } // k
+	  F77_NAME(dpotrf)(lower, &pTilde, var, &pTilde, &info FCONE);
+          if(info != 0){Rf_error("c++ error: dpotrf var failed\n");}
+	  F77_NAME(dpotri)(lower, &pTilde, var, &pTilde, &info FCONE);
+          if(info != 0){Rf_error("c++ error: dpotri var failed\n");}
+
+	  // muNNGP
+	  for (k = 0; k < pTilde; k++) {
+            muNNGP[k] = (y[ii] - F77_NAME(ddot)(&p, &X[ii], &J, beta, &inc) - betaStarSites[ii]) / tauSq * Xw[k * J + ii] + gg[k] + a[k];
+          } // k
+
+	  F77_NAME(dsymv)(lower, &pTilde, &one, var, &pTilde, muNNGP, &inc, &zero, tmp_pTilde, &inc FCONE);
+
+	  F77_NAME(dpotrf)(lower, &pTilde, var, &pTilde, &info FCONE);
+          if(info != 0){Rf_error("c++ error: dpotrf var 2 failed\n");}
+
+	  mvrnorm(&w[ii * pTilde], tmp_pTilde, var, pTilde);
+
+        } // ii
+
+
+	// Compute Xw %*% w = wSites.
+	// This calculation is correct (confirmed April 27)
+	for (j = 0; j < J; j++) {
+          wSites[j] = 0.0;
+	  for (ll = 0; ll < pTilde; ll++) {
+            wSites[j] += w[j * pTilde + ll] * Xw[ll * J + j];
+	    // Rprintf("w[%i]: %f\n", j * pTilde + ll, w[j * pTilde + ll]);
 	  }
-
-	  e = 0;
-	  for(j = 0; j < nnIndxLU[J+i]; j++){
-	    e += B[nnIndxLU[i]+j]*w[nnIndx[nnIndxLU[i]+j]];
-	  }
-
-	  muNNGP = (y[i] - F77_NAME(ddot)(&p, &X[i], &J, beta, &inc) - betaStarSites[i]) / tauSq + e/F[i] + a;
-
-	  var = 1.0/(1.0/tauSq + 1.0/F[i] + v);
-
-	  w[i] = rnorm(muNNGP * var, sqrt(var));
-
-        } // i
-
+	  // Rprintf("wSites[%i]: %f\n", j, wSites[j]);
+	}
 
         /********************************************************************
-         *Update sigmaSq
+         *Update spatial covariance parameters
          *******************************************************************/
-	if (sigmaSqIG == 1) {
-	  a = 0;
-	  logDet = 0;
+	for (ll = 0; ll < pTilde; ll++) {
+          /******************************************************************
+           *Update sigmaSq
+           *****************************************************************/
+          aa = 0;
 #ifdef _OPENMP
-#pragma omp parallel for private (e, i, b) reduction(+:a, logDet)
+#pragma omp parallel for private (e, i, b) reduction(+:aa, logDet)
 #endif
           for (j = 0; j < J; j++){
             if(nnIndxLU[J+j] > 0){
               e = 0;
               for(i = 0; i < nnIndxLU[J+j]; i++){
-                e += B[nnIndxLU[j]+i]*w[nnIndx[nnIndxLU[j]+i]];
+                e += B[ll * nIndx + nnIndxLU[j]+i]*w[nnIndx[nnIndxLU[j]+i] * pTilde + ll];
               }
-              b = w[j] - e;
+              b = w[j * pTilde + ll] - e;
             }else{
-              b = w[j];
+              b = w[j * pTilde + ll];
             }
-            a += b*b/F[j];
+            aa += b*b/F[ll * J + j];
           }
 
-	  theta[sigmaSqIndx] = rigamma(sigmaSqA + J / 2.0,
-			               sigmaSqB + 0.5 * a * theta[sigmaSqIndx]);
-	}
+	  theta[sigmaSqIndx * pTilde + ll] = rigamma(sigmaSqA[ll] + J / 2.0, sigmaSqB[ll] + 0.5 * aa * theta[sigmaSqIndx * pTilde + ll]);
 
-        /********************************************************************
-         *Update phi (and nu if matern)
-         *******************************************************************/
-        if (corName == "matern"){ nu = theta[nuIndx]; }
-        updateBFGaus(B, F, c, C, coords, nnIndx, nnIndxLU, J, m, theta[sigmaSqIndx],
-		   theta[phiIndx], nu, covModel, bk, nuB);
-
-        a = 0;
-        logDet = 0;
+          /******************************************************************
+           *Update phi (and nu if matern)
+           *****************************************************************/
+          // Current
+          if (corName == "matern"){
+	    nu[ll] = theta[nuIndx * pTilde + ll];
+       	  }
+          updateBFSVCNNGP(&B[ll * nIndx], &F[ll*J], &c[ll * m*nThreads], &C[ll * mm * nThreads], coords, nnIndx, nnIndxLU, J, m, theta[sigmaSqIndx * pTilde + ll], theta[phiIndx * pTilde + ll], nu[ll], covModel, &bk[ll * sizeBK], nuB[ll]);
+          aa = 0;
+          logDet = 0;
 
 #ifdef _OPENMP
-#pragma omp parallel for private (e, i, b) reduction(+:a, logDet)
+#pragma omp parallel for private (e, ii, b) reduction(+:aa, logDet)
 #endif
-        for (j = 0; j < J; j++){
-          if (nnIndxLU[J+j] > 0){
-            e = 0;
-            for (i = 0; i < nnIndxLU[J+j]; i++){
-              e += B[nnIndxLU[j]+i]*w[nnIndx[nnIndxLU[j]+i]];
+          for (j = 0; j < J; j++){
+            if (nnIndxLU[J+j] > 0){
+              e = 0;
+              for (ii = 0; ii < nnIndxLU[J+j]; ii++){
+                e += B[ll * nIndx + nnIndxLU[j]+ii]*w[nnIndx[nnIndxLU[j]+ii] * pTilde + ll];
+              }
+              b = w[j * pTilde + ll] - e;
+            } else{
+              b = w[j * pTilde + ll];
             }
-            b = w[j] - e;
-          } else{
-            b = w[j];
+            aa += b*b/F[ll * J + j];
+            logDet += log(F[ll * J + j]);
           }
-          a += b*b/F[j];
-          logDet += log(F[j]);
-        }
 
-        logPostThetaCurr = -0.5*logDet - 0.5*a;
-        logPostThetaCurr += log(theta[phiIndx] - phiA) + log(phiB - theta[phiIndx]);
-        if(corName == "matern"){
-        	logPostThetaCurr += log(theta[nuIndx] - nuA) + log(nuB - theta[nuIndx]);
-        }
-	if (sigmaSqIG == 0) {
-          logPostThetaCurr += log(theta[sigmaSqIndx] - sigmaSqA) + log(sigmaSqB - theta[sigmaSqIndx]);
-	}
-
-        // Candidate
-        phiCand = logitInv(rnorm(logit(theta[phiIndx], phiA, phiB),
-				exp(tuning[phiIndx])), phiA, phiB);
-	if (sigmaSqIG == 0) {
-	  sigmaSqCand = logitInv(rnorm(logit(theta[sigmaSqIndx], sigmaSqA, sigmaSqB),
-				 exp(tuning[sigmaSqIndx])), sigmaSqA, sigmaSqB);
-	}
-        if (corName == "matern"){
-      	  nuCand = logitInv(rnorm(logit(theta[nuIndx], nuA, nuB), exp(tuning[nuIndx])), nuA, nuB);
-        }
-
-        if (sigmaSqIG) {
-          updateBFGaus(BCand, FCand, c, C, coords, nnIndx, nnIndxLU, J, m, theta[sigmaSqIndx], phiCand, nuCand, covModel, bk, nuB);
-	  } else {
-            updateBFGaus(BCand, FCand, c, C, coords, nnIndx, nnIndxLU, J, m, sigmaSqCand, phiCand, nuCand, covModel, bk, nuB);
-	}
-
-        a = 0;
-        logDet = 0;
-
-#ifdef _OPENMP
-#pragma omp parallel for private (e, i, b) reduction(+:a, logDet)
-#endif
-        for (j = 0; j < J; j++){
-          if (nnIndxLU[J+j] > 0){
-            e = 0;
-            for (i = 0; i < nnIndxLU[J+j]; i++){
-              e += BCand[nnIndxLU[j]+i]*w[nnIndx[nnIndxLU[j]+i]];
-            }
-            b = w[j] - e;
-          } else{
-            b = w[j];
-            }
-            a += b*b/FCand[j];
-            logDet += log(FCand[j]);
-        }
-
-        logPostThetaCand = -0.5*logDet - 0.5*a;
-        logPostThetaCand += log(phiCand - phiA) + log(phiB - phiCand);
-        if (corName == "matern"){
-          logPostThetaCand += log(nuCand - nuA) + log(nuB - nuCand);
-        }
-	  if (sigmaSqIG == 0) {
-            logPostThetaCand += log(sigmaSqCand - sigmaSqA) + log(sigmaSqB - sigmaSqCand);
-	  }
-
-        if (runif(0.0,1.0) <= exp(logPostThetaCand - logPostThetaCurr)) {
-
-          std::swap(BCand, B);
-          std::swap(FCand, F);
-
-          theta[phiIndx] = phiCand;
-          accept[phiIndx]++;
+          logPostCurr = -0.5 * logDet - 0.5 * aa;
+          logPostCurr += log(theta[phiIndx * pTilde + ll] - phiA[ll]) + log(phiB[ll] - theta[phiIndx * pTilde + ll]);
           if(corName == "matern"){
-            theta[nuIndx] = nuCand;
-            accept[nuIndx]++;
+       	    logPostCurr += log(theta[nuIndx * pTilde + ll] - nuA[ll]) + log(nuB[ll] - theta[nuIndx * pTilde + ll]);
           }
-	  if (sigmaSqIG == 0) {
-            theta[sigmaSqIndx] = sigmaSqCand;
-	    accept[sigmaSqIndx]++;
-	  }
-        }
+
+          // Candidate
+          phiCand = logitInv(rnorm(logit(theta[phiIndx * pTilde + ll], phiA[ll], phiB[ll]), exp(tuning[phiIndx * pTilde + ll])), phiA[ll], phiB[ll]);
+          if (corName == "matern"){
+      	    nuCand = logitInv(rnorm(logit(theta[nuIndx * pTilde + ll], nuA[ll], nuB[ll]), exp(tuning[nuIndx * pTilde + ll])), nuA[ll], nuB[ll]);
+          }
+
+          updateBFSVCNNGP(BCand, FCand, &c[ll * m*nThreads], &C[ll * mm * nThreads], coords, nnIndx, nnIndxLU, J, m, theta[sigmaSqIndx * pTilde + ll], phiCand, nuCand, covModel, &bk[ll * sizeBK], nuB[ll]);
+
+          aa = 0;
+          logDet = 0;
+
+#ifdef _OPENMP
+#pragma omp parallel for private (e, ii, b) reduction(+:aa, logDet)
+#endif
+          for (j = 0; j < J; j++){
+            if (nnIndxLU[J+j] > 0){
+              e = 0;
+              for (ii = 0; ii < nnIndxLU[J+j]; ii++){
+                e += BCand[nnIndxLU[j]+ii]*w[nnIndx[nnIndxLU[j]+ii] * pTilde + ll];
+              }
+              b = w[j * pTilde + ll] - e;
+            } else{
+              b = w[j * pTilde + ll];
+              }
+              aa += b*b/FCand[j];
+              logDet += log(FCand[j]);
+          }
+
+          logPostCand = -0.5*logDet - 0.5*aa;
+          logPostCand += log(phiCand - phiA[ll]) + log(phiB[ll] - phiCand);
+          if (corName == "matern"){
+            logPostCand += log(nuCand - nuA[ll]) + log(nuB[ll] - nuCand);
+          }
+
+          if (runif(0.0,1.0) <= exp(logPostCand - logPostCurr)) {
+
+            F77_NAME(dcopy)(&nIndx, BCand, &inc, &B[ll * nIndx], &inc);
+            F77_NAME(dcopy)(&J, FCand, &inc, &F[ll * J], &inc);
+
+	    theta[phiIndx * pTilde + ll] = phiCand;
+            accept[phiIndx * pTilde + ll]++;
+            if (corName == "matern") {
+              nu[ll] = nuCand;
+	      theta[nuIndx * pTilde + ll] = nu[ll];
+              accept[nuIndx * pTilde + ll]++;
+            }
+          }
+	} // ll
 
         /********************************************************************
          *Get fitted values and likelihood for WAIC
          *******************************************************************/
-	if (saveFitted == 1) {
-          for (j = 0; j < J; j++) {
-            mu[j] = F77_NAME(ddot)(&p, &X[j], &J, beta, &inc) + w[j] + betaStarSites[j];
-            yRep[j] = rnorm(mu[j], sqrt(tauSq));
-            like[j] = dnorm(y[j], mu[j], sqrt(tauSq), 0);
-	  } // j
-	}
+         for (j = 0; j < J; j++) {
+           mu[j] = F77_NAME(ddot)(&p, &X[j], &J, beta, &inc) + wSites[j] + betaStarSites[j];
+           yRep[j] = rnorm(mu[j], sqrt(tauSq));
+           like[j] = dnorm(y[j], mu[j], sqrt(tauSq), 0);
+	 } // j
         /********************************************************************
          *Get fitted values and likelihood for WAIC for the zero values
          *******************************************************************/
-	if (saveFitted == 1) {
-          for (j = 0; j < JZero; j++) {
-            yRepZero[j] = rnorm(0.0, sqrt(0.0001));
-	  } // j
-        }
+         for (j = 0; j < JZero; j++) {
+           yRepZero[j] = rnorm(0.0, sqrt(0.0001));
+	 } // j
+
         /********************************************************************
          *Save samples
          *******************************************************************/
@@ -655,23 +700,21 @@ extern "C" {
           thinIndx++;
 	  if (thinIndx == nThin) {
             F77_NAME(dcopy)(&p, beta, &inc, &REAL(betaSamples_r)[sPost*p], &inc);
-            F77_NAME(dcopy)(&J, w, &inc, &REAL(wSamples_r)[sPost*J], &inc);
+            F77_NAME(dcopy)(&J, mu, &inc, &REAL(muSamples_r)[sPost*J], &inc);
+            F77_NAME(dcopy)(&JpTilde, w, &inc, &REAL(wSamples_r)[sPost*JpTilde], &inc);
 	    REAL(tauSqSamples_r)[sPost] = tauSq;
-	    F77_NAME(dcopy)(&nTheta, theta, &inc,
-			    &REAL(thetaSamples_r)[sPost*nTheta], &inc);
-	    if (saveFitted == 1) {
-	      F77_NAME(dcopy)(&J, yRep, &inc, &REAL(yRepSamples_r)[sPost*J], &inc);
-	      F77_NAME(dcopy)(&JZero, yRepZero, &inc, &REAL(yRepZeroSamples_r)[sPost*JZero], &inc);
-              F77_NAME(dcopy)(&J, mu, &inc, &REAL(muSamples_r)[sPost*J], &inc);
-              F77_NAME(dcopy)(&J, like, &inc,
-        		      &REAL(likeSamples_r)[sPost*J], &inc);
-	    }
+	    F77_NAME(dcopy)(&nThetapTilde, theta, &inc,
+			    &REAL(thetaSamples_r)[sPost*nThetapTilde], &inc);
+	    F77_NAME(dcopy)(&J, yRep, &inc, &REAL(yRepSamples_r)[sPost*J], &inc);
+	    F77_NAME(dcopy)(&JZero, yRepZero, &inc, &REAL(yRepZeroSamples_r)[sPost*JZero], &inc);
             if (pRE > 0) {
               F77_NAME(dcopy)(&pRE, sigmaSqMu, &inc,
                   	    &REAL(sigmaSqMuSamples_r)[sPost*pRE], &inc);
               F77_NAME(dcopy)(&nRE, betaStar, &inc,
                   	    &REAL(betaStarSamples_r)[sPost*nRE], &inc);
             }
+            F77_NAME(dcopy)(&J, like, &inc,
+        		    &REAL(likeSamples_r)[sPost*J], &inc);
 	    sPost++;
 	    thinIndx = 0;
 	  }
@@ -683,30 +726,31 @@ extern "C" {
       /********************************************************************
        *Adjust tuning
        *******************************************************************/
-      for (j = 0; j < nTheta; j++) {
-        REAL(acceptSamples_r)[s * nTheta + j] = accept[j]/batchLength;
-        REAL(tuningSamples_r)[s * nTheta + j] = tuning[j];
-        if (accept[j] / batchLength > acceptRate) {
-          tuning[j] += std::min(0.01, 1.0/sqrt(static_cast<double>(s)));
-        } else{
-            tuning[j] -= std::min(0.01, 1.0/sqrt(static_cast<double>(s)));
+      for (ll = 0; ll < pTilde; ll++) {
+        for (j = 0; j < nTheta; j++) {
+          REAL(acceptSamples_r)[s * nThetapTilde + j * pTilde + ll] = accept[j * pTilde + ll]/batchLength;
+          REAL(tuningSamples_r)[s * nThetapTilde + j * pTilde + ll] = tuning[j * pTilde + ll];
+          if (accept[j * pTilde + ll] / batchLength > acceptRate) {
+            tuning[j * pTilde + ll] += std::min(0.01, 1.0/sqrt(static_cast<double>(s)));
+          } else{
+              tuning[j * pTilde + ll] -= std::min(0.01, 1.0/sqrt(static_cast<double>(s)));
           }
-        accept[j] = 0;
-      }
+          accept[j * pTilde + ll] = 0;
+        } // j
+      } // ll
       /********************************************************************
        *Report
        *******************************************************************/
       if (verbose) {
 	if (status == nReport) {
 	  Rprintf("Batch: %i of %i, %3.2f%%\n", s, nBatch, 100.0*s/nBatch);
-	  Rprintf("\tParameter\tAcceptance\tTuning\n");
-	  Rprintf("\tphi\t\t%3.1f\t\t%1.5f\n", 100.0*REAL(acceptSamples_r)[s * nTheta + phiIndx], exp(tuning[phiIndx]));
-	  if (corName == "matern") {
-	    Rprintf("\tnu\t\t%3.1f\t\t%1.5f\n", 100.0*REAL(acceptSamples_r)[s * nTheta + nuIndx], exp(tuning[nuIndx]));
-	  }
-	  if (sigmaSqIG == 0) {
-	    Rprintf("\tsigmaSq\t\t%3.1f\t\t%1.5f\n", 100.0*REAL(acceptSamples_r)[s * nTheta + sigmaSqIndx], exp(tuning[sigmaSqIndx]));
-	  }
+          Rprintf("\tCoefficient\tParameter\tAcceptance\tTuning\n");
+          for (ll = 0; ll < pTilde; ll++) {
+            Rprintf("\t%i\t\tphi\t\t%3.1f\t\t%1.5f\n", ll + 1, 100.0*REAL(acceptSamples_r)[s * nThetapTilde + phiIndx * pTilde + ll], exp(tuning[phiIndx * pTilde + ll]));
+	    if (corName == "matern") {
+              Rprintf("\t%i\t\tnu\t\t%3.1f\t\t%1.5f\n", ll + 1, 100.0*REAL(acceptSamples_r)[s * nThetapTilde + nuIndx * pTilde + ll], exp(tuning[nuIndx * pTilde + ll]));
+	    }
+          } // ll
 	  Rprintf("-------------------------------------------------\n");
           #ifdef Win32
 	  R_FlushConsole();
@@ -719,6 +763,7 @@ extern "C" {
     if (verbose) {
       Rprintf("Batch: %i of %i, %3.2f%%\n", s, nBatch, 100.0*s/nBatch);
     }
+
 
     // This is necessary when generating random numbers in C.
     PutRNGstate();
@@ -736,16 +781,14 @@ extern "C" {
     // Setting the components of the output list.
     SET_VECTOR_ELT(result_r, 0, betaSamples_r);
     SET_VECTOR_ELT(result_r, 1, tauSqSamples_r);
-    if (saveFitted == 1) {
-      SET_VECTOR_ELT(result_r, 2, yRepSamples_r);
-      SET_VECTOR_ELT(result_r, 3, muSamples_r);
-      SET_VECTOR_ELT(result_r, 8, likeSamples_r);
-      SET_VECTOR_ELT(result_r, 9, yRepZeroSamples_r);
-    }
+    SET_VECTOR_ELT(result_r, 2, yRepSamples_r);
+    SET_VECTOR_ELT(result_r, 3, muSamples_r);
     SET_VECTOR_ELT(result_r, 4, thetaSamples_r);
     SET_VECTOR_ELT(result_r, 5, wSamples_r);
     SET_VECTOR_ELT(result_r, 6, tuningSamples_r);
     SET_VECTOR_ELT(result_r, 7, acceptSamples_r);
+    SET_VECTOR_ELT(result_r, 8, likeSamples_r);
+    SET_VECTOR_ELT(result_r, 9, yRepZeroSamples_r);
     if (pRE > 0) {
       SET_VECTOR_ELT(result_r, 10, sigmaSqMuSamples_r);
       SET_VECTOR_ELT(result_r, 11, betaStarSamples_r);
@@ -754,16 +797,14 @@ extern "C" {
     // Rf_mkChar turns a C string into a CHARSXP
     SET_VECTOR_ELT(resultName_r, 0, Rf_mkChar("beta.samples"));
     SET_VECTOR_ELT(resultName_r, 1, Rf_mkChar("tau.sq.samples"));
-    if (saveFitted == 1) {
-      SET_VECTOR_ELT(resultName_r, 2, Rf_mkChar("y.rep.samples"));
-      SET_VECTOR_ELT(resultName_r, 3, Rf_mkChar("mu.samples"));
-      SET_VECTOR_ELT(resultName_r, 8, Rf_mkChar("like.samples"));
-      SET_VECTOR_ELT(resultName_r, 9, Rf_mkChar("y.rep.zero.samples"));
-    }
+    SET_VECTOR_ELT(resultName_r, 2, Rf_mkChar("y.rep.samples"));
+    SET_VECTOR_ELT(resultName_r, 3, Rf_mkChar("mu.samples"));
     SET_VECTOR_ELT(resultName_r, 4, Rf_mkChar("theta.samples"));
     SET_VECTOR_ELT(resultName_r, 5, Rf_mkChar("w.samples"));
     SET_VECTOR_ELT(resultName_r, 6, Rf_mkChar("tune"));
     SET_VECTOR_ELT(resultName_r, 7, Rf_mkChar("accept"));
+    SET_VECTOR_ELT(resultName_r, 8, Rf_mkChar("like.samples"));
+    SET_VECTOR_ELT(resultName_r, 9, Rf_mkChar("y.rep.zero.samples"));
     if (pRE > 0) {
       SET_VECTOR_ELT(resultName_r, 10, Rf_mkChar("sigma.sq.mu.samples"));
       SET_VECTOR_ELT(resultName_r, 11, Rf_mkChar("beta.star.samples"));

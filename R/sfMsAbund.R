@@ -4,7 +4,7 @@ sfMsAbund <- function(formula, data, inits, priors,
                       n.batch, batch.length, accept.rate = 0.43, family = 'Poisson',
                       n.omp.threads = 1, verbose = TRUE, n.report = 100,
                       n.burn = round(.10 * n.batch * batch.length),
-		      n.thin = 1, n.chains = 1, save.fitted = TRUE, ...){
+                      n.thin = 1, n.chains = 1, save.fitted = TRUE, ...){
 
   ptm <- proc.time()
 
@@ -121,6 +121,10 @@ sfMsAbund <- function(formula, data, inits, priors,
     }
     if (n.thin > n.samples) {
       stop("error: n.thin must be less than n.samples")
+    }
+    # Check if n.burn, n.thin, and n.samples result in an integer and error if otherwise.
+    if (((n.samples - n.burn) / n.thin) %% 1 != 0) {
+      stop("the number of posterior samples to save ((n.samples - n.burn) / n.thin) is not a whole number. Please respecify the MCMC criteria such that the number of posterior samples saved is a whole number.")
     }
     if (missing(n.factors)) {
       stop("error: n.factors must be specified for a spatial factor GLMM")
@@ -618,7 +622,7 @@ sfMsAbund <- function(formula, data, inits, priors,
         }
       }
       beta.star.indx <- rep(0:(p.abund.re - 1), n.abund.re.long)
-      beta.star.inits <- rnorm(n.abund.re, sqrt(sigma.sq.mu.inits[beta.star.indx + 1]))
+      beta.star.inits <- rnorm(n.abund.re, 0, sqrt(sigma.sq.mu.inits[beta.star.indx + 1]))
       # Starting values for all species
       beta.star.inits <- rep(beta.star.inits, n.sp)
     } else {
@@ -1008,7 +1012,7 @@ sfMsAbund <- function(formula, data, inits, priors,
           }
           if (p.abund.re > 0) {
             sigma.sq.mu.inits <- runif(p.abund.re, 0.05, 1)
-            beta.star.inits <- rnorm(n.abund.re, sqrt(sigma.sq.mu.inits[beta.star.indx + 1]))
+            beta.star.inits <- rnorm(n.abund.re, 0, sqrt(sigma.sq.mu.inits[beta.star.indx + 1]))
             beta.star.inits <- rep(beta.star.inits, n.sp)
           }
         }

@@ -105,6 +105,10 @@ NMix <- function(abund.formula, det.formula, data, inits, priors, tuning,
   if (n.thin > n.samples) {
     stop("error: n.thin must be less than n.samples")
   }
+  # Check if n.burn, n.thin, and n.samples result in an integer and error if otherwise.
+  if (((n.samples - n.burn) / n.thin) %% 1 != 0) {
+    stop("the number of posterior samples to save ((n.samples - n.burn) / n.thin) is not a whole number. Please respecify the MCMC criteria such that the number of posterior samples saved is a whole number.")
+  }
 
   if (!(family) %in% c('Poisson', 'NB')) {
     stop("family must be either 'Poisson' or 'NB'")
@@ -572,7 +576,7 @@ NMix <- function(abund.formula, det.formula, data, inits, priors, tuning,
       }
     }
     beta.star.indx <- rep(0:(p.abund.re - 1), n.abund.re.long)
-    beta.star.inits <- rnorm(n.abund.re, sqrt(sigma.sq.mu.inits[beta.star.indx + 1]))
+    beta.star.inits <- rnorm(n.abund.re, 0, sqrt(sigma.sq.mu.inits[beta.star.indx + 1]))
   } else {
     sigma.sq.mu.inits <- 0
     beta.star.indx <- 0
@@ -602,7 +606,7 @@ NMix <- function(abund.formula, det.formula, data, inits, priors, tuning,
       }
     }
     alpha.star.indx <- rep(0:(p.det.re - 1), n.det.re.long)
-    alpha.star.inits <- rnorm(n.det.re, sqrt(sigma.sq.p.inits[alpha.star.indx + 1]))
+    alpha.star.inits <- rnorm(n.det.re, 0, sqrt(sigma.sq.p.inits[alpha.star.indx + 1]))
   } else {
     sigma.sq.p.inits <- 0
     alpha.star.indx <- 0
@@ -807,11 +811,11 @@ NMix <- function(abund.formula, det.formula, data, inits, priors, tuning,
       alpha.inits <- rnorm(p.det, 0, 1)
       if (p.abund.re > 0) {
         sigma.sq.mu.inits <- runif(p.abund.re, 0.05, 2)
-        beta.star.inits <- rnorm(n.abund.re, sqrt(sigma.sq.mu.inits[beta.star.indx + 1]))
+        beta.star.inits <- rnorm(n.abund.re, 0, sqrt(sigma.sq.mu.inits[beta.star.indx + 1]))
       }
       if (p.det.re > 0) {
         sigma.sq.p.inits <- runif(p.det.re, 0.05, 2)
-        alpha.star.inits <- rnorm(n.det.re, sqrt(sigma.sq.p.inits[alpha.star.indx + 1]))
+        alpha.star.inits <- rnorm(n.det.re, 0, sqrt(sigma.sq.p.inits[alpha.star.indx + 1]))
       }
       if (family == 'NB') {
         kappa.inits <- runif(1, kappa.a, kappa.b)
